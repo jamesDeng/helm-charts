@@ -1,0 +1,77 @@
+kind: "Service"
+apiVersion: "v1"
+metadata: 
+  name: "{{.Values.pgpool.name}}"
+  labels:
+    name: "{{.Values.pgpool.name}}"
+    heritage: {{ .Release.Service | quote }}
+    release: {{ .Release.Name | quote }}
+    chart: "{{.Chart.Name}}-{{.Chart.Version}}"
+spec: 
+  ports: 
+  - protocol: TCP
+    port: {{.Values.container.port}}
+    targetPort: {{.Values.container.port}}
+    {{- if eq .Values.pgpool.serviceType "NodePort"}}
+    nodePort: {{.Values.pgpool.nodePort}}
+    {{- end}}
+  selector:
+    name: "{{.Values.pgpool.name}}"
+  type: {{.Values.pgpool.serviceType}}
+  sessionAffinity: "None"
+---
+kind: "Deployment"
+apiVersion: "extensions/v1beta1"
+metadata: 
+  name: "{{.Values.pgpool.name}}"
+  labels:
+    name: "{{.Values.pgpool.name}}"
+    heritage: {{.Release.Service | quote }}
+    release: {{.Release.Name | quote }}
+    chart: {{.Chart.Name}}-{{.Chart.Version}}
+  annotations:
+    "helm.sh/created": {{.Release.Time.Seconds | quote }}
+spec: 
+  replicas: 1
+  strategy: 
+    type: "RollingUpdate"
+    rollingUpdate: 
+      maxUnavailable: 1
+      maxSurge: 1
+  template: 
+    metadata: 
+      labels: 
+        name: "{{.Values.pgpool.name}}"
+    spec: 
+      containers: 
+      - name: "{{.Values.pgpool.name}}"
+        image: "{{.Values.image.repository}}/{{.Values.image.pool}}:{{.Values.image.tag}}"
+        ports: 
+        - containerPort: 5432
+          protocol: TCP
+        readinessProbe: 
+          tcpSocket: 
+            port: 5432
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        livenessProbe: 
+          tcpSocket: 
+            port: 5432
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        env: 
+        volumeMounts: 
+        - name: pgpool-pgconf
+          mountPath: "/pgconf/pgpoolconfigdir"
+          readOnly: false
+        - name: host-time
+          mountPath: /etc/localtime
+      volumes: 
+      - name: "pgpool-pgconf"
+        secret: 
+          secretName: "pgpool-secrets"
+      - name: host-time
+        hostPath:
+          path: /etc/localtime
+      restartPolicy: "Always"
+      dnsPolicy: "ClusterFirst"

@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Values.primary.pv.volumeId}}
+  labels:
+    failure-domain.beta.kubernetes.io/zone: cn-hangzhou-b
+    failure-domain.beta.kubernetes.io/region: cn-hangzhou
+spec:
+  capacity:
+    storage: {{.Values.container.storage}}
+  storageClassName: {{ .Values.primary.pv.name}}
+  accessModes:
+    - {{ .Values.primary.pvc.mode }}
+  persistentVolumeReclaimPolicy: {{ .Values.primary.pv.persistentVolumeReclaimPolicy}}
+  flexVolume:
+    driver: "alicloud/disk"
+    fsType: "ext4"
+    options:
+      volumeId: {{ .Values.primary.pv.volumeId}}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{.Values.primary.pvc.name}}
+spec:
+  accessModes:
+    - {{ .Values.primary.pvc.mode }}
+  storageClassName: {{ .Values.primary.pv.name}}
+  resources:
+    requests:
+      storage: {{.Values.container.storage}}

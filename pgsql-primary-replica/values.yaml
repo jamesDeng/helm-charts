@@ -1,0 +1,58 @@
+name: primary-replica
+container:
+  port: 5432
+  #存储大小
+  storage: 20Gi
+
+image:
+  repository: crunchydata
+  postgres: crunchy-postgres
+  pool: crunchy-pgpool
+  tag: centos7-10.4-2.0.0
+
+primary:
+  name: primary
+  serviceType: ClusterIP
+  resources:
+    cpu: 1000m
+    memory: 2Gi
+  pv:
+    name: primary-pv
+    #阿里云盘的id
+    volumeId: 123123
+    #回收策略包括 “Retain”、”Recycle” 和 “Delete”
+    persistentVolumeReclaimPolicy: Retain 
+  pvc:
+    #注意阿里云盘的类型
+    storageClassName: alicloud-disk-ssd
+    name: primary-pvc
+    #ReadWriteMany 需要文件类型的支持，可以做到primary 高可用,ReadWriteOnce 目前暂时使用
+    mode: ReadWriteOnce
+  #nodeSelector:
+    #dbnode: true
+
+replica:
+  name: replica
+  serviceType: ClusterIP
+  resources:
+    cpu: 1000m
+    memory: 2Gi
+  pvc:
+    #注意阿里云盘的类型
+    storageClassName: alicloud-disk-ssd
+  #nodeSelector:
+    #dbnode: true
+
+pgpool:
+  name: pgpool
+  serviceType: NodePort
+  #如serviceType为NodePort，必须有nodePort
+  nodePort: 30435
+
+config:
+  PG_USER: testuser
+  PG_DATABASE: userdb
+  PG_PASSWORD: password
+  PG_PRIMARY_USER: primaryuser
+  PG_PRIMARY_PASSWORD: password
+  PG_ROOT_PASSWORD: password

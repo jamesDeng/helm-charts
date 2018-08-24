@@ -1,0 +1,14 @@
+kind: Secret
+apiVersion: v1
+metadata: 
+  name: pgpool-secrets
+type: Opaque
+data:
+{{ (.Files.Glob "pool-configs/*").AsSecrets | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgpool-pgconf
+data:
+{{ (.Files.Glob "pool-configs/*").AsConfig | indent 2 }}  

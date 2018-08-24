@@ -1,0 +1,124 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: "{{.Values.primary.name}}"
+  labels:
+    name: "{{.Values.primary.name}}"
+    # The "heritage" label is used to track which tool deployed a given chart.
+    # It is useful for admins who want to see what releases a particular tool
+    # is responsible for.
+    heritage: {{.Release.Service | quote }}
+    # The "release" convention makes it easy to tie a release to all of the
+    # Kubernetes resources that were created as part of that release.
+    release: {{.Release.Name | quote }}
+    # This makes it easy to audit chart usage.
+    chart: "{{.Chart.Name}}-{{.Chart.Version}}"
+  annotations:
+    "helm.sh/created": {{.Release.Time.Seconds | quote }}
+spec:
+  replicas: 1
+  strategy: 
+    type: "RollingUpdate"
+    rollingUpdate: 
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      name: "{{.Values.primary.name}}"
+  {{- if .Values.primary.nodeSelector }}
+  nodeSelector:
+    {{- range $key, $val := .Values.primary.nodeSelector }}
+    {{ $key }}: {{ $val | quote }}
+    {{- end}}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        name: "{{.Values.primary.name}}"
+      name: "{{.Values.primary.name}}"
+    spec:
+      containers:
+      - env:
+        - name: PGHOST
+          value: /tmp
+        - name: PG_MODE
+          value: primary
+        - name: PGDATA_PATH_OVERRIDE
+          value: primary-deployment
+        - name: PG_PRIMARY_PORT
+          value: "{{.Values.container.port}}"
+        - name: PG_USER
+          valueFrom: 
+            secretKeyRef:
+              key: PG_USER
+              name: pgprimary-secret
+        - name: PG_PASSWORD
+          valueFrom: 
+            secretKeyRef:
+              key: PG_PASSWORD
+              name: pgprimary-secret
+        - name: PG_DATABASE
+          valueFrom: 
+            secretKeyRef:
+              key: PG_DATABASE
+              name: pgprimary-secret
+        - name: PG_PRIMARY_USER
+          valueFrom: 
+            secretKeyRef:
+              key: PG_PRIMARY_USER
+              name: pgprimary-secret
+        - name: PG_PRIMARY_PASSWORD
+          valueFrom: 
+            secretKeyRef:
+              key: PG_PRIMARY_PASSWORD
+              name: pgprimary-secret
+        - name: PG_ROOT_PASSWORD
+          valueFrom: 
+            secretKeyRef:
+              key: PG_ROOT_PASSWORD
+              name: pgprimary-secret
+        resources:
+          requests:
+            cpu: {{ .Values.primary.resources.cpu }}
+            memory: {{ .Values.primary.resources.memory }}
+        image: "{{.Values.image.repository}}/{{.Values.image.postgres}}:{{.Values.image.tag}}"
+        imagePullPolicy: IfNotPresent
+        name: "{{.Values.primary.name}}"
+        readinessProbe:
+          exec:
+            command:
+            - "/opt/cpm/bin/readiness.sh"
+          initialDelaySeconds: 40
+          timeoutSeconds: 1
+        livenessProbe:
+          exec:
+            command:
+            - "/opt/cpm/bin/liveness.sh"
+          initialDelaySeconds: 40
+          timeoutSeconds: 1
+        ports:
+        - containerPort: {{.Values.container.port}}
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /pgdata
+          name: pgdata
+          readOnly: false
+        - mountPath: /pgconf
+          name: primary-deployment-pgconf
+        - name: host-time
+          mountPath: /etc/localtime
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      securityContext: 
+        fsGroup: 26
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: "pgdata"
+        persistentVolumeClaim:
+          claimName: {{.Values.primary.pvc.name}}
+      - name: primary-deployment-pgconf
+        configMap:
+          name: primary-deployment-pgconf
+      - name: host-time
+        hostPath:
+          path: /etc/localtime

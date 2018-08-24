@@ -1,0 +1,21 @@
+# This is a service gateway to the replica set created by the deployment.
+# Take a look at the deployment.yaml for general notes about this chart.
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{.Values.primary.name}}"
+  labels:
+    name: "{{.Values.primary.name}}"
+    heritage: {{ .Release.Service | quote }}
+    release: {{ .Release.Name | quote }}
+    chart: "{{.Chart.Name}}-{{.Chart.Version}}"
+spec:
+  type: "{{.Values.replica.serviceType}}"
+  ports:
+  - port: {{.Values.container.port}}
+    targetPort: {{.Values.container.port}}
+    protocol: TCP
+    name: postgres
+    nodePort: 0
+  selector:
+    name: "{{.Values.primary.name}}"

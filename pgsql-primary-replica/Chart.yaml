@@ -1,0 +1,7 @@
+apiVersion: v1
+name: pgsql-primary-replica
+description: postgres 集群部署
+version: 1.0
+appVersion: 2.0.0
+keywords:
+- postgresql
