@@ -46,7 +46,7 @@ replica:
 pgpool:
   name: pgpool
   serviceType: NodePort
-  #如serviceType为NodePort，必须有nodePort
+  #serviceType: NodePort 必须有nodePort
   nodePort: 30435
 
 config:

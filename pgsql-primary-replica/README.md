@@ -1,147 +1,110 @@
-Crunchy Data Primary / Replica Helm Example
+Postgres 高可用集群部署方案
 =======
+方案整合基于[crunchy-containers](https://crunchydata.github.io/crunchy-containers/),结合阿里云使用
+## 部署
 
-[PostgreSQL](https://postgresql.org) is a powerful, open source object-relational database system. It has more than 15 years of active development and a proven architecture that has earned it a strong reputation for reliability, data integrity, and correctness.
-
-
-TL;DR;
-------
-
-```console
-$ helm install primary-replica --name primary-replica
+``` bash
+helm install pgsql-primary-replica --name pgsql-primary-replica --set primary.pv.volumeId=xxxx
 ```
+primary.pv.volumeId 为阿里云盘ID
 
-Introduction
-------------
+## 说明
+目前的组成结构为：
 
-This is an example of running the Crunchy PostgreSQL containers using the Helm project! More examples of the Crunchy Containers for PostgreSQL can be found at the [GitHub repository](https://github.com/CrunchyData/crunchy-containers).
+* pgpool-II deployment
+* primary deployment
+* replica statefulset
 
-This example will create the following in your Kubernetes cluster:
+create the following in your Kubernetes cluster:
 
  * Create a service named *primary*
  * Create a service named *replica*
- * Create a pod named *primary*
- * Create a deployment named *replica*
+ * Create a service named *pgpool*
+ * Create a deployment named *primary*
+ * Create a statefulset named *replica*
+ * Create a deployment named *pgpool*
  * Create a persistent volume named *primary-pv* and a persistent volume claim of *primary-pvc*
- * Initialize the database using the predefined environment variables
+ * Create a secret pgprimary-secret
+ * Create a secret pgpool-secrets
+ * Create a configMap pgpool-pgconf
 
-This example creates a simple PostgreSQL streaming replication deployment with a primary (read-write), and a single asynchronous replica (read-only). You can scale up the number of replicas dynamically.
+## 自定义配制文件
+根目录下：
 
-Installing the Chart
---------------------
+* pool-configs
+    - pgpool.conf
+    - pool_hba.conf
+    - pool_passwd
+* primary-configs
+    - pg_hba.conf
+    - postgresql.conf
+    - setup.sql
 
-The chart can be installed as follows:
+如果使用repo的方式安装，由于没有找到helm install替换这些文件的方式，目前有两个解决方案：
 
-```console
-$ helm install primary-replica --name primary-replica
+1. install完成后手动修改相应的configMap和secret的内容
+2. helm fetch pgsql-primary-replica --untar 下源文件，修改相应的配件文件，采用 helm install ./ 的方式安装
+
+## postgres 用户名和密码修改
+如果是通过pgpool连接数据库的话，必须在pool_passwd配制postgres的用户名和密码
+### 部署前
+可以设置默认用户postgres和PG_USER对应用户的密码
+
+1. 修改values.yaml中PG_ROOT_PASSWORD或者PG_PASSWORD的值，
+2. 使用pgpool的pg_md5 指令生成密码（pg_md5 --md5auth --username= ）
+3. 修改pool-configs/pool_passwd中的用户名和密码
+
+### 部署后修改
+先获取postgres的用户名和md5密码
+``` bash
+$ kubectl get pod -n thinker-production
+NAME                       READY     STATUS    RESTARTS   AGE
+pgpool-67987c5c67-gjr5h    1/1       Running   0          3d
+primary-6f9f488df8-6xjjd   1/1       Running   0          3d
+replica-0                  1/1       Running   0          3d
+
+# 进入primary pod
+$ kubectl exec -it primary-6f9f488df8-6xjjd  -n thinker-production  sh
+
+$ psql
+
+#执行sql查找md5
+$ select usename,passwd from pg_shadow;  
+   usename   |               passwd                
+-------------+-------------------------------------
+ postgres    | md5dc5aac68d3de3d518e49660904174d0c
+ primaryuser | md576dae4ce31558c16fe845e46d66a403c
+ testuser    | md599e8713364988502fa6189781bcf648f
+(3 rows)
 ```
-
-The command deploys both primary and replica pods on the Kubernetes cluster in the default configuration.
-
-> **Tip**: List all releases using `helm list`
-
-Using the Chart
-----------------------
-
-After installing the Helm chart, you will see the following services:
-```console
-$ kubectl get services
-NAME                          TYPE        CLUSTER-IP   EXTERNAL-IP      PORT(S)    AGE
-primary   ClusterIP   10.0.0.99    <none>           5432/TCP   22m
-replica   ClusterIP   10.0.0.253   <none>           5432/TCP   22m
-kubernetes                    ClusterIP   10.0.0.1     <none>           443/TCP    7h
+pool_passwd 的格式为
+``` bash
+postgres:md5dc5aac68d3de3d518e49660904174d0c
 ```
-
-It takes about a minute for the replica to begin replicating with the
-primary.  To test out replication, see if replication is underway
-with this command, enter *password* for the password when prompted:
-
-```console
-$ psql -h primary -U postgres postgres -c 'table pg_stat_replication'
+k8s secret 的values为bash46,转换
+``` bash
+$ echo -n 'postgres:md5dc5aac68d3de3d518e49660904174d0c' | base64
+cG9zdGdyZXM6bWQ1ZGM1YWFjNjhkM2RlM2Q1MThlNDk2NjA5MDQxNzRkMGM=
 ```
-
-If you see a line returned from that query it means the primary is replicating
-to the replica.  Try creating some data on the primary:
-
-```console
-$ psql -h primary -U postgres postgres -c 'create table foo (id int)'
-$ psql -h primary -U postgres postgres -c 'insert into foo values (1)'
+编辑 pgpool-secrets 替换 pool_passwd 值
+``` bash
+kubectl edit secret pgpool-secrets  -n thinker-production
 ```
-
-Then verify that the data is replicated to the replica:
-
-```console
-$ psql -h replica -U postgres postgres -c 'table foo'
+编辑 pgpool deploy,触发滚动更新
+``` bash
+kubectl edit deploy pgpool  -n thinker-production
+# 一般可以修改一下 terminationGracePeriodSeconds 的值
 ```
-
-You can scale up the number of read-only replicas by running
-the following Kubernetes command:
-
-```console
-$ kubectl scale deployment replica --replicas=2
-```
-
-It takes 60 seconds for the replica to start and begin replicating
-from the primary.
-
-Uninstalling the Chart
-----------------------
-
-To uninstall/delete the `primary-replica` deployment:
-
-```console
-$ helm del --purge primary-replica
-```
-
-The command removes all the Kubernetes components associated with the chart and deletes the release.
-
-Configuration
--------------
-
-See `values.yaml` for configuration notes. Specify each parameter using the `--set key=value[,key=value]` argument to `helm install`. For example,
-
-```console
-$ helm install primary-replica --name primary-replica \
-  --set Image.tag=centos7-9.6.9-2.0
-```
-
-The above command changes the image tag of the container from the default of `centos7-10.4-2.0` to `centos7-9.6.9-2.0`.
-
-> **Tip**: You can use the default [values.yaml](values.yaml)
-
-| Parameter                  | Description                        | Default                                                    |
+## 参数说明
+| Parameter  | Description  |Default|
 | -----------------------    | ---------------------------------- | ---------------------------------------------------------- |
-| `.name`                 | Name of release.                 | `primary-replica`                                        |
-| `.container.port`        | The port used for the primary container      | `5432`                                                      |
-| `.container.name.primary`        | Name for the primary container      | `primary`                                                      |
-| `.container.name.replica`        | Name for the replica container      | `replica`                                                      |
-| `.credentials.primary`                | Password for the primary user    | `password`                                                      |
-| `.credentials.root`            | Password for the root user        | `password`                                                      |
-| `.credentials.user`            | Password for the standard user   | `password`                                                      |
-| `.serviceType`      | The type of service      | `ClusterIP`               
-| `.image.repository` | The repository on DockerHub where the images are found.    | `crunchydata`                                           |
-| `.image.container` | The container to be pulled from the repository.    | `crunchy-postgres`                                                    |
-| `.image.tag` | The image tag to be used.    | `centos7-10.4-2.0`                                                    |
-| `.pv.storage` | Size of persistent volume     | 400M                                                    |
-| `.pv.name` | Name of persistent volume    | `primary-pv`                                                    |
-| `.pv.mode` | The storage mode for the persistent volume    | `ReadWriteMany`                                                    |
-| `.pv.path` | The path of the mounted storage filesystem    | `/data`                                                    |
-| `.pvc.name` | Name of persistent volume    | `primary-pvc`                                                    |
-| `.resources.cpu` | Defines a limit for CPU    | `200m`                                                    |
-| `.resources.memory` | Defines a limit for memory    | `512Mi`                                                    |
-
-Alternatively, a YAML file that specifies the values for the above parameters can be provided while installing the chart. For example,
-
-```console
-$ helm install primary-replica --name primary-replica  \
-  -f values.yaml
-```
-
-Legal Notices
--------------
-
-Copyright 2017 - 2018 Crunchy Data Solutions, Inc.
-
-CRUNCHY DATA SOLUTIONS, INC. PROVIDES THIS GUIDE "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
-
-Crunchy, Crunchy Data Solutions, Inc. and the Crunchy Hippo Logo are trademarks of Crunchy Data Solutions, Inc.
+| `.container.port`| 端口| `5432`|
+| `.container.storage`| 存储大小| `20G`|
+| `.primary.pv.volumeId`| master 阿里云盘id||
+| `.primary.pvc.mode`| PVC Access Modes，如是 ReadWriteMany 需要文件类型的支持（阿里NAS盘可以），可以做到primary 高可用|ReadWriteOnce|
+| `.config.PG_USER`| 用户库的用户名|testuser|
+| `.config.PG_DATABASE`| 用户库名|userdb|
+| `.config.PG_PASSWORD`| 用户库的密码|testuser|
+| `.config.PG_PRIMARY_USER`| 主从复制的用户名 |primaryuser|
+| `.config.PG_PRIMARY_PASSWORD`| 主从复制的密码|testuser|
+| `.config.PG_ROOT_PASSWORD`| root用户postgres的密码|testuser|
