@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.kibana.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    k8s-app: {{ .Values.kibana.name }}
+    kubernetes.io/cluster-service: "true"
+    addonmanager.kubernetes.io/mode: Reconcile
+    kubernetes.io/name: "Kibana"
+    chart: {{ template "efk.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  ports:
+  - port: {{ .Values.kibana.port }}
+    protocol: TCP
+    targetPort: ui
+  selector:
+    k8s-app: {{ .Values.kibana.name }}
+---
+{{- if .Values.kibana.ingress.enable }}
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ .Values.kibana.name }}
+  namespace: {{ .Values.namespace }}
+  {{- if .Values.kibana.ingress.basicAuth.enable }}
+  annotations:
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: {{ .Values.kibana.ingress.basicAuth.authSecret }}
+    nginx.ingress.kubernetes.io/auth-realm: "Authentication Required - {{ .Values.kibana.ingress.basicAuth.username }}"
+  {{ end -}}
+  labels:
+    chart: {{ template "efk.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  rules:
+  - host: {{ .Values.kibana.ingress.domain }}
+    http:
+      paths:
+      - backend:
+          serviceName: {{ .Values.kibana.name }}
+          servicePort: {{ .Values.kibana.port }}
+{{ end -}}

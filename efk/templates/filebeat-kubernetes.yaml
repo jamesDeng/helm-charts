@@ -1,0 +1,148 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    k8s-app: {{ .Values.filebeat.name }}
+    chart: {{ template "efk.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  {{- $files := .Files }}
+  {{- range tuple "filebeat-config.yml"}}
+  {{ . }}: |-
+{{ $files.Get . }}
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-inputs
+  namespace: {{ .Values.namespace }}
+  labels:
+    k8s-app: {{ .Values.filebeat.name }}
+    chart: {{ template "efk.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+{{ (.Files.Glob "filebeat-inputs/*").AsConfig | indent 2 }}
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: {{ .Values.filebeat.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    k8s-app: {{ .Values.filebeat.name }}
+    chart: {{ template "efk.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  template:
+    metadata:
+      labels:
+        k8s-app: {{ .Values.filebeat.name }}
+    spec:
+      serviceAccountName: {{ .Values.filebeat.name }}
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: filebeat
+        image: {{ .Values.filebeat.image.repo }}:{{ .Values.filebeat.image.tag }}
+        args: [
+          "-c", "/etc/filebeat-config.yml",
+          "-e",
+        ]
+        env:
+        - name: ELASTICSEARCH_HOST
+          value: elasticsearch
+        - name: ELASTICSEARCH_PORT
+          value: "9200"
+        - name: ELASTIC_CLOUD_ID
+          value:
+        - name: ELASTIC_CLOUD_AUTH
+          value:
+        securityContext:
+          runAsUser: 0
+        resources:
+          limits:
+            memory: {{ .Values.filebeat.resources.limits.memory }}
+          requests:
+            cpu: {{ .Values.filebeat.resources.requests.cpu }}
+            memory: {{ .Values.filebeat.resources.requests.memory }}
+        volumeMounts:
+        - name: config
+          mountPath: /etc/filebeat-config.yml
+          readOnly: true
+          subPath: filebeat-config.yml
+        - name: inputs
+          mountPath: /usr/share/filebeat/inputs.d
+          readOnly: true
+        - name: data
+          mountPath: /usr/share/filebeat/data
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          defaultMode: 0600
+          name: filebeat-config
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: inputs
+        configMap:
+          defaultMode: 0600
+          name: filebeat-inputs
+      # data folder stores a registry of read status for all files, so we don't send everything again on a Filebeat pod restart
+      - name: data
+        hostPath:
+          path: /var/lib/filebeat-data
+          type: DirectoryOrCreate
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Values.filebeat.name }}
+  namespace: {{ .Values.namespace }}
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.filebeat.name }}
+  namespace: {{ .Values.namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ .Values.filebeat.name }}
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: {{ .Values.filebeat.name }}
+  labels:
+    k8s-app: {{ .Values.filebeat.name }}
+    chart: {{ template "efk.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+rules:
+- apiGroups: [""] # "" indicates the core API group
+  resources:
+  - namespaces
+  - pods
+  verbs:
+  - get
+  - watch
+  - list
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.filebeat.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    k8s-app: {{ .Values.filebeat.name }}
+    chart: {{ template "efk.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+---

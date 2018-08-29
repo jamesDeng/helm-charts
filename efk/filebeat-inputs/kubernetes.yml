@@ -1,0 +1,6 @@
+- type: docker
+  containers.ids:
+  - "*"
+  processors:
+    - add_kubernetes_metadata:
+        in_cluster: true

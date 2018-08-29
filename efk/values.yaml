@@ -1,0 +1,50 @@
+namespace: kube-system
+es: 
+  name: elasticsearch-logging
+  image: 
+    repo: registry.cn-hangzhou.aliyuncs.com/google_containers/elasticsearch
+    tag: v5.6.4
+  replicas: 2
+  resources:
+    # need more cpu upon initialization, therefore burstable class
+    limits:
+      cpu: 1000m
+    requests:
+      cpu: 100m
+  pvc:
+    #开启 pvc，创建阿里云盘
+    enable: false
+    storageClassName: alicloud-disk-efficiency
+    storage: 20Gi
+
+filebeat: 
+  name: filebeat
+  image: 
+    repo: docker.elastic.co/beats/filebeat
+    tag: 6.4.0
+  resources:
+    limits:
+      memory: 200Mi
+    requests:
+      cpu: 100m
+      memory: 100Mi
+
+kibana: 
+  name: kibana-logging
+  image: 
+    repo: docker.elastic.co/kibana/kibana
+    tag: 5.6.4
+  port: 5601  
+  ingress:
+    enable: true
+    basicAuth: 
+      enable: false # 进行 http basic-auth 授权
+      authSecret: kibana-basic-auth
+      username: kibana
+    domain: kibana.domain.com
+  resources:
+    # need more cpu upon initialization, therefore burstable class
+    limits:
+      cpu: 1000m
+    requests:
+      cpu: 100m
