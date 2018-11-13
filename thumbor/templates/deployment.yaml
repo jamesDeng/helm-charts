@@ -1,0 +1,66 @@
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: {{ template "thumbor.fullname" . }}
+  labels:
+    app: {{ template "thumbor.name" . }}
+    chart: {{ template "thumbor.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    rollingUpdate:
+      maxSurge: 2      #滚动升级时会先启动1个pod
+      maxUnavailable: 1 #滚动升级时允许的最大Unavailable的pod个数
+  selector:
+    matchLabels:
+      app: {{ template "thumbor.name" . }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "thumbor.name" . }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}-thumbor
+          image: "{{ .Values.thumbor.image.repository }}:{{ .Values.thumbor.image.tag }}"
+          imagePullPolicy: {{ .Values.thumbor.image.pullPolicy }}
+          envFrom:
+          - configMapRef:  #加载配制
+              name: {{ template "thumbor.fullname" . }}-config
+          resources:
+{{ toYaml .Values.thumbor.resources | indent 12 }}
+        - name: {{ .Chart.Name }}-nginx
+          image: "{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
+          imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          env:
+          - name: THUMBOR_DEFAULT_HOST
+            value: 127.0.0.1
+          - name: THUMBOR_PORT
+            value: "{{ .Values.thumborConfig.THUMBOR_PORT }}"
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 30 
+            timeoutSeconds: 2 
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 15
+            timeoutSeconds: 2 
+          resources:
+{{ toYaml .Values.nginx.resources | indent 12 }}
+    {{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "thumbor.fullname" . }}-config
+  labels:
+    chart: {{ template "thumbor.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  {{- range $key, $val := .Values.thumborConfig }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end}}
